@@ -10,17 +10,15 @@
     "Linters"
   ],
   "activationEvents": [
-    "onStartupFinished",
-    "onCommand:extension.gitCommitCheck"
+    "onStartupFinished"
   ],
   "main": "./out/extension.js",
   "contributes": {
-    "languages": [
-      {
-        "id": "plaintext",
-        "aliases": ["Plain Text"],
-        "extensions": ["*"]
-      }
+    "commands": [
+        {
+          "command": "keyscannerwjerry.scanPasswords",
+          "title": "Scan for Passwords"
+        }
     ],
     "commands": [
       {
