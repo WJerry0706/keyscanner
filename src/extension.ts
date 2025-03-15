@@ -23,16 +23,30 @@ export function activate(context: vscode.ExtensionContext) {
         if (ranges.length > 0) {
             vscode.window.showWarningMessage(
                 '潜在密钥已检测到！点击跳转到第一个匹配位置。',
-                '跳转',
+                '跳转', '替换密钥'
             ).then(selection => {
                 if (selection === '跳转') {
                     const firstMatchRange = ranges[0];
                     // 跳转到第一个匹配位置
                     editor.revealRange(firstMatchRange, vscode.TextEditorRevealType.InCenter);
                     editor.selection = new vscode.Selection(firstMatchRange.start, firstMatchRange.end);
+                } else if (selection === '替换密钥') {
+                    replaceFirstKey(editor, ranges[0]);
                 }
             });
         }
+    }
+
+    function replaceFirstKey(editor: vscode.TextEditor, range: vscode.Range) {
+        editor.edit(editBuilder => {
+            editBuilder.replace(range, '"REDACTED_SECRET"'); // 用无用字符串替换密钥
+        }).then(success => {
+            if (success) {
+                vscode.window.showInformationMessage('密钥已被替换为无用字符串。');
+            } else {
+                vscode.window.showErrorMessage('密钥替换失败。');
+            }
+        });
     }
 
     // 监听文档打开
