@@ -12,7 +12,9 @@ export function activate(context: vscode.ExtensionContext) {
     });
 
     function updateDecorations(editor: vscode.TextEditor | undefined) {
-        if (!editor) return;
+        if (!editor){
+            return;
+        }
         const text = editor.document.getText();
         const ranges = detectPasswords(text);
         editor.setDecorations(decorationType, ranges);

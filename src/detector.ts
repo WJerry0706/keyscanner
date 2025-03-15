@@ -14,7 +14,7 @@ export function detectPasswords(text: string): vscode.Range[] {
     
         /https?:\/\/[^\s?]+\?(?:[^\s&]*_?(password|passwd|pwd|pass|credential|secret|key|token|auth|access[_-]key|private[_-]key|client[_-]secret|api[_-]key|bearer[_-]token|jwt)=[^\s&]+)/gi,
         // Base64 编码的密钥 (16,24,64 位编码)
-        /([A-Za-z0-9+/=]{16,24,64,})/gi,
+        /([A-Za-z0-9+/=]{16,64})/gi,
     
         // 可能的十六进制格式 (32+ 位长的 hex 字符串)
         /\b[0-9a-fA-F]{32,}\b/gi,

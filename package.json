@@ -19,12 +19,6 @@
           "command": "keyscannerwjerry.scanPasswords",
           "title": "Scan for Passwords"
         }
-    ],
-    "commands": [
-      {
-        "command": "extension.gitCommitCheck",
-        "title": "Git Commit Check"
-      }
     ]
   },
   "scripts": {
