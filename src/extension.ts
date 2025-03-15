@@ -12,12 +12,27 @@ export function activate(context: vscode.ExtensionContext) {
     });
 
     function updateDecorations(editor: vscode.TextEditor | undefined) {
-        if (!editor){
+        if (!editor) {
             return;
         }
         const text = editor.document.getText();
         const ranges = detectPasswords(text);
         editor.setDecorations(decorationType, ranges);
+
+        // 如果找到潜在的密钥，触发警告通知
+        if (ranges.length > 0) {
+            vscode.window.showWarningMessage(
+                '潜在密钥已检测到！点击跳转到第一个匹配位置。',
+                '跳转',
+            ).then(selection => {
+                if (selection === '跳转') {
+                    const firstMatchRange = ranges[0];
+                    // 跳转到第一个匹配位置
+                    editor.revealRange(firstMatchRange, vscode.TextEditorRevealType.InCenter);
+                    editor.selection = new vscode.Selection(firstMatchRange.start, firstMatchRange.end);
+                }
+            });
+        }
     }
 
     // 监听文档打开
