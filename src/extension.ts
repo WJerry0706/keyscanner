@@ -26,7 +26,9 @@ export function activate(context: vscode.ExtensionContext) {
                 '潜在密钥已检测到！选择一个操作：',
                 '跳转', '删除密钥', '替换为全局变量'
             ).then(selection => {
-                if (!selection) return;
+                if (!selection){
+                    return;
+                }
                 const firstMatchRange = ranges[0];
 
                 if (selection === '跳转') {
@@ -79,38 +81,70 @@ export function activate(context: vscode.ExtensionContext) {
     
     function replaceWithEnvVariable(editor: vscode.TextEditor, range: vscode.Range) {
         const document = editor.document;
+        const languageId = document.languageId; // 获取当前文件的语言
         const secretValue = document.getText(range).match(/["']([^"']+)["']/)?.[1] || '';
-
+    
         if (!secretValue) {
             vscode.window.showErrorMessage('无法提取密钥值。');
             return;
         }
-
+    
         // 生成环境变量名称
         const envVarName = `MY_SECRET_${Math.floor(Math.random() * 10000)}`.toUpperCase();
         const workspaceFolders = vscode.workspace.workspaceFolders;
-
+    
         if (!workspaceFolders) {
             vscode.window.showErrorMessage('请在一个工作区中打开文件。');
             return;
         }
-
+    
         const workspaceRoot = workspaceFolders[0].uri.fsPath;
         const envFilePath = path.join(workspaceRoot, '.env');
         const gitignorePath = path.join(workspaceRoot, '.gitignore');
-
-        // 替换代码中的密钥为 `process.env.ENV_VAR`
+    
+        // 根据语言选择环境变量的写法
+        let replacementText = '';
+    
+        switch (languageId) {
+            case 'javascript':
+            case 'typescript':
+                replacementText = `process.env.${envVarName}`;
+                break;
+            case 'python':
+                replacementText = `os.getenv('${envVarName}')`;
+                break;
+            case 'go':
+                replacementText = `os.Getenv("${envVarName}")`;
+                break;
+            case 'java':
+                replacementText = `System.getenv("${envVarName}")`;
+                break;
+            case 'csharp':
+                replacementText = `Environment.GetEnvironmentVariable("${envVarName}")`;
+                break;
+            case 'php':
+                replacementText = `getenv('${envVarName}')`;
+                break;
+            case 'ruby':
+                replacementText = `ENV['${envVarName}']`;
+                break;
+            default:
+                replacementText = `process.env.${envVarName}`; // 默认使用 JavaScript 方式
+                break;
+        }
+    
+        // 替换代码中的密钥为相应的全局变量写法
         editor.edit(editBuilder => {
-            editBuilder.replace(range, `process.env.${envVarName}`);
+            editBuilder.replace(range, replacementText);
         }).then(success => {
             if (!success) {
                 vscode.window.showErrorMessage('替换环境变量失败。');
                 return;
             }
-
+    
             // 写入 .env 文件
             fs.appendFileSync(envFilePath, `\n${envVarName}=${secretValue}\n`, { encoding: 'utf8' });
-
+    
             // 确保 .gitignore 存在，并添加 .env 规则
             if (!fs.existsSync(gitignorePath)) {
                 fs.writeFileSync(gitignorePath, '.env\n', { encoding: 'utf8' });
@@ -120,10 +154,11 @@ export function activate(context: vscode.ExtensionContext) {
                     fs.appendFileSync(gitignorePath, '\n.env\n', { encoding: 'utf8' });
                 }
             }
-
+    
             vscode.window.showInformationMessage(`密钥已替换为全局变量 ${envVarName} 并存储在 .env 文件中！`);
         });
     }
+    
 
     vscode.window.onDidChangeActiveTextEditor(editor => {
         updateDecorations(editor);
