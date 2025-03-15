@@ -13,22 +13,32 @@ export function activate(context: vscode.ExtensionContext) {
         borderColor: 'red'
     });
 
+    // 统计密钥检测次数
+    let detectedKeysCount = 0;
+
+    // 状态栏显示密钥数量
+    const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
+    statusBarItem.text = `🔑 检测到密钥: 0`;
+    statusBarItem.show();
+    context.subscriptions.push(statusBarItem);
+
     function updateDecorations(editor: vscode.TextEditor | undefined) {
-        if (!editor) {
-            return;
-        }
+        if (!editor) return;
+
         const text = editor.document.getText();
         const ranges = detectPasswords(text);
         editor.setDecorations(decorationType, ranges);
 
+        // 更新状态栏
+        detectedKeysCount += ranges.length;
+        statusBarItem.text = `🔑 检测到密钥: ${detectedKeysCount}`;
+
         if (ranges.length > 0) {
             vscode.window.showWarningMessage(
-                '潜在密钥已检测到！选择一个操作：',
+                `🔐 发现 ${ranges.length} 个潜在密钥! 请选择操作:`,
                 '跳转', '删除密钥', '替换为全局变量'
             ).then(selection => {
-                if (!selection){
-                    return;
-                }
+                if (!selection) return;
                 const firstMatchRange = ranges[0];
 
                 if (selection === '跳转') {
@@ -51,20 +61,14 @@ export function activate(context: vscode.ExtensionContext) {
         const equalIndex = fullText.indexOf('=');
         const colonIndex = fullText.indexOf(':');
     
-        let separatorIndex = -1;
-    
-        if (equalIndex !== -1 && colonIndex !== -1) {
-            // 如果同时存在 `=` 和 `:`，取最先出现的一个
-            separatorIndex = Math.min(equalIndex, colonIndex);
-        } else {
-            // 只存在 `=` 或 `:`，取存在的那个
-            separatorIndex = equalIndex !== -1 ? equalIndex : colonIndex;
-        }
-    
-        let newText = '// Please put your key here'; // 默认情况下，删除整个密钥
-    
-        if (separatorIndex !== -1) {
-            // 如果有 `=` 或 `:`，保留 `key=` 或 `key:`，后面替换为注释
+        let separatorIndex = Math.min(
+            equalIndex !== -1 ? equalIndex : Infinity, 
+            colonIndex !== -1 ? colonIndex : Infinity
+        );
+
+        let newText = '// Please put your key here';
+
+        if (separatorIndex !== Infinity) {
             newText = fullText.substring(0, separatorIndex + 1) + '\n // Please put your key here';
         }
     
@@ -78,62 +82,45 @@ export function activate(context: vscode.ExtensionContext) {
             }
         });
     }    
-    
+
     function replaceWithEnvVariable(editor: vscode.TextEditor, range: vscode.Range) {
         const document = editor.document;
-        const languageId = document.languageId; // 获取当前文件的语言
+        const languageId = document.languageId;
         const secretValue = document.getText(range).match(/["']([^"']+)["']/)?.[1] || '';
-    
+
         if (!secretValue) {
             vscode.window.showErrorMessage('无法提取密钥值。');
             return;
         }
-    
+
         // 生成环境变量名称
         const envVarName = `MY_SECRET_${Math.floor(Math.random() * 10000)}`.toUpperCase();
         const workspaceFolders = vscode.workspace.workspaceFolders;
-    
+
         if (!workspaceFolders) {
             vscode.window.showErrorMessage('请在一个工作区中打开文件。');
             return;
         }
-    
+
         const workspaceRoot = workspaceFolders[0].uri.fsPath;
         const envFilePath = path.join(workspaceRoot, '.env');
         const gitignorePath = path.join(workspaceRoot, '.gitignore');
-    
-        // 根据语言选择环境变量的写法
-        let replacementText = '';
-    
-        switch (languageId) {
-            case 'javascript':
-            case 'typescript':
-                replacementText = `process.env.${envVarName}`;
-                break;
-            case 'python':
-                replacementText = `os.getenv('${envVarName}')`;
-                break;
-            case 'go':
-                replacementText = `os.Getenv("${envVarName}")`;
-                break;
-            case 'java':
-                replacementText = `System.getenv("${envVarName}")`;
-                break;
-            case 'csharp':
-                replacementText = `Environment.GetEnvironmentVariable("${envVarName}")`;
-                break;
-            case 'php':
-                replacementText = `getenv('${envVarName}')`;
-                break;
-            case 'ruby':
-                replacementText = `ENV['${envVarName}']`;
-                break;
-            default:
-                replacementText = `process.env.${envVarName}`; // 默认使用 JavaScript 方式
-                break;
-        }
-    
-        // 替换代码中的密钥为相应的全局变量写法
+
+        // 适配不同语言的环境变量格式
+        const envVarFormats: { [key: string]: string } = {
+            'javascript': `process.env.${envVarName}`,
+            'typescript': `process.env.${envVarName}`,
+            'python': `os.getenv('${envVarName}')`,
+            'go': `os.Getenv("${envVarName}")`,
+            'java': `System.getenv("${envVarName}")`,
+            'csharp': `Environment.GetEnvironmentVariable("${envVarName}")`,
+            'php': `getenv('${envVarName}')`,
+            'ruby': `ENV['${envVarName}']`
+        };
+
+        const replacementText = envVarFormats[languageId] || `process.env.${envVarName}`;
+
+        // 替换密钥
         editor.edit(editBuilder => {
             editBuilder.replace(range, replacementText);
         }).then(success => {
@@ -141,10 +128,10 @@ export function activate(context: vscode.ExtensionContext) {
                 vscode.window.showErrorMessage('替换环境变量失败。');
                 return;
             }
-    
+
             // 写入 .env 文件
             fs.appendFileSync(envFilePath, `\n${envVarName}=${secretValue}\n`, { encoding: 'utf8' });
-    
+
             // 确保 .gitignore 存在，并添加 .env 规则
             if (!fs.existsSync(gitignorePath)) {
                 fs.writeFileSync(gitignorePath, '.env\n', { encoding: 'utf8' });
@@ -154,11 +141,10 @@ export function activate(context: vscode.ExtensionContext) {
                     fs.appendFileSync(gitignorePath, '\n.env\n', { encoding: 'utf8' });
                 }
             }
-    
+
             vscode.window.showInformationMessage(`密钥已替换为全局变量 ${envVarName} 并存储在 .env 文件中！`);
         });
     }
-    
 
     vscode.window.onDidChangeActiveTextEditor(editor => {
         updateDecorations(editor);
