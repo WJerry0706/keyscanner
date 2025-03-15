@@ -24,7 +24,7 @@ export function activate(context: vscode.ExtensionContext) {
         if (ranges.length > 0) {
             vscode.window.showWarningMessage(
                 '潜在密钥已检测到！选择一个操作：',
-                '跳转', '替换密钥', '替换为全局变量'
+                '跳转', '删除密钥', '替换为全局变量'
             ).then(selection => {
                 if (!selection) return;
                 const firstMatchRange = ranges[0];
@@ -32,7 +32,7 @@ export function activate(context: vscode.ExtensionContext) {
                 if (selection === '跳转') {
                     editor.revealRange(firstMatchRange, vscode.TextEditorRevealType.InCenter);
                     editor.selection = new vscode.Selection(firstMatchRange.start, firstMatchRange.end);
-                } else if (selection === '替换密钥') {
+                } else if (selection === '删除密钥') {
                     replaceFirstKey(editor, firstMatchRange);
                 } else if (selection === '替换为全局变量') {
                     replaceWithEnvVariable(editor, firstMatchRange);
@@ -42,17 +42,41 @@ export function activate(context: vscode.ExtensionContext) {
     }
 
     function replaceFirstKey(editor: vscode.TextEditor, range: vscode.Range) {
+        const document = editor.document;
+        const fullText = document.getText(range);
+    
+        // 找到 `=` 或 `:` 的位置
+        const equalIndex = fullText.indexOf('=');
+        const colonIndex = fullText.indexOf(':');
+    
+        let separatorIndex = -1;
+    
+        if (equalIndex !== -1 && colonIndex !== -1) {
+            // 如果同时存在 `=` 和 `:`，取最先出现的一个
+            separatorIndex = Math.min(equalIndex, colonIndex);
+        } else {
+            // 只存在 `=` 或 `:`，取存在的那个
+            separatorIndex = equalIndex !== -1 ? equalIndex : colonIndex;
+        }
+    
+        let newText = '// Please put your key here'; // 默认情况下，删除整个密钥
+    
+        if (separatorIndex !== -1) {
+            // 如果有 `=` 或 `:`，保留 `key=` 或 `key:`，后面替换为注释
+            newText = fullText.substring(0, separatorIndex + 1) + '\n // Please put your key here';
+        }
+    
         editor.edit(editBuilder => {
-            editBuilder.replace(range, '"REDACTED_SECRET"');
+            editBuilder.replace(range, newText);
         }).then(success => {
             if (success) {
-                vscode.window.showInformationMessage('密钥已被替换为无用字符串。');
+                vscode.window.showInformationMessage('密钥已被删除，并替换为提示注释。');
             } else {
-                vscode.window.showErrorMessage('密钥替换失败。');
+                vscode.window.showErrorMessage('密钥删除失败。');
             }
         });
-    }
-
+    }    
+    
     function replaceWithEnvVariable(editor: vscode.TextEditor, range: vscode.Range) {
         const document = editor.document;
         const secretValue = document.getText(range).match(/["']([^"']+)["']/)?.[1] || '';
