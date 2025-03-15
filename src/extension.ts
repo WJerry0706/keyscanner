@@ -13,10 +13,9 @@ export function activate(context: vscode.ExtensionContext) {
         borderColor: 'red'
     });
 
-    // 统计密钥检测次数
     let detectedKeysCount = 0;
+    const ignoredSecrets = new Set<string>(); // 只保留忽略密钥功能
 
-    // 状态栏显示密钥数量
     const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
     statusBarItem.text = `🔑 检测到密钥: 0`;
     statusBarItem.show();
@@ -26,20 +25,29 @@ export function activate(context: vscode.ExtensionContext) {
         if (!editor) return;
 
         const text = editor.document.getText();
-        const ranges = detectPasswords(text);
-        editor.setDecorations(decorationType, ranges);
+        let ranges = detectPasswords(text);
 
-        // 更新状态栏
+        // 过滤掉被忽略的密钥
+        ranges = ranges.filter(range => {
+            const secret = editor.document.getText(range);
+            return !ignoredSecrets.has(secret);
+        });
+
+        // 更新状态栏统计
         detectedKeysCount += ranges.length;
         statusBarItem.text = `🔑 检测到密钥: ${detectedKeysCount}`;
+
+        // 应用高亮
+        editor.setDecorations(decorationType, ranges);
 
         if (ranges.length > 0) {
             vscode.window.showWarningMessage(
                 `🔐 发现 ${ranges.length} 个潜在密钥! 请选择操作:`,
-                '跳转', '删除密钥', '替换为全局变量'
+                '跳转', '删除密钥', '替换为全局变量', '忽略此密钥'
             ).then(selection => {
                 if (!selection) return;
                 const firstMatchRange = ranges[0];
+                const secret = editor.document.getText(firstMatchRange);
 
                 if (selection === '跳转') {
                     editor.revealRange(firstMatchRange, vscode.TextEditorRevealType.InCenter);
@@ -48,6 +56,10 @@ export function activate(context: vscode.ExtensionContext) {
                     replaceFirstKey(editor, firstMatchRange);
                 } else if (selection === '替换为全局变量') {
                     replaceWithEnvVariable(editor, firstMatchRange);
+                } else if (selection === '忽略此密钥') {
+                    ignoredSecrets.add(secret);
+                    vscode.window.showInformationMessage('该密钥已被忽略，不再检测。');
+                    updateDecorations(editor);
                 }
             });
         }
@@ -57,10 +69,8 @@ export function activate(context: vscode.ExtensionContext) {
         const document = editor.document;
         const fullText = document.getText(range);
     
-        // 找到 `=` 或 `:` 的位置
         const equalIndex = fullText.indexOf('=');
         const colonIndex = fullText.indexOf(':');
-    
         let separatorIndex = Math.min(
             equalIndex !== -1 ? equalIndex : Infinity, 
             colonIndex !== -1 ? colonIndex : Infinity
@@ -93,7 +103,6 @@ export function activate(context: vscode.ExtensionContext) {
             return;
         }
 
-        // 生成环境变量名称
         const envVarName = `MY_SECRET_${Math.floor(Math.random() * 10000)}`.toUpperCase();
         const workspaceFolders = vscode.workspace.workspaceFolders;
 
@@ -106,7 +115,6 @@ export function activate(context: vscode.ExtensionContext) {
         const envFilePath = path.join(workspaceRoot, '.env');
         const gitignorePath = path.join(workspaceRoot, '.gitignore');
 
-        // 适配不同语言的环境变量格式
         const envVarFormats: { [key: string]: string } = {
             'javascript': `process.env.${envVarName}`,
             'typescript': `process.env.${envVarName}`,
@@ -120,7 +128,6 @@ export function activate(context: vscode.ExtensionContext) {
 
         const replacementText = envVarFormats[languageId] || `process.env.${envVarName}`;
 
-        // 替换密钥
         editor.edit(editBuilder => {
             editBuilder.replace(range, replacementText);
         }).then(success => {
@@ -129,10 +136,8 @@ export function activate(context: vscode.ExtensionContext) {
                 return;
             }
 
-            // 写入 .env 文件
             fs.appendFileSync(envFilePath, `\n${envVarName}=${secretValue}\n`, { encoding: 'utf8' });
 
-            // 确保 .gitignore 存在，并添加 .env 规则
             if (!fs.existsSync(gitignorePath)) {
                 fs.writeFileSync(gitignorePath, '.env\n', { encoding: 'utf8' });
             } else {
